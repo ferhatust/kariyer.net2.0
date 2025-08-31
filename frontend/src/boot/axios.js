@@ -26,6 +26,36 @@ export default defineBoot(({ app }) => {
     return config
   })
 
+  // Global error handler
+  api.interceptors.response.use(
+    (res) => res,
+    (error) => {
+      try {
+        const status = error?.response?.status
+        const msg = error?.response?.data?.message || error?.message || 'Beklenmedik bir hata oluştu'
+        // Lazy import to avoid circular deps; Notify may not be available here so use window if present
+        if (typeof window !== 'undefined') {
+          const { Notify } = require('quasar')
+          // Network/offline errors have no response
+          const isNetwork = !error?.response || error?.code === 'ERR_NETWORK'
+          if (isNetwork) {
+            Notify.create({ type: 'warning', message: 'Ağ bağlantısı yok veya erişilemiyor. Lütfen internetinizi kontrol edin.' })
+          } else if (status === 401) {
+            Notify.create({ type: 'warning', message: 'Oturum süresi doldu. Lütfen tekrar giriş yapın.' })
+            // Optional: localStorage.removeItem('api_token')
+          } else if (status === 429) {
+            Notify.create({ type: 'warning', message: 'Çok fazla istek. Lütfen biraz sonra tekrar deneyin.' })
+          } else if (status >= 500) {
+            Notify.create({ type: 'negative', message: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.' })
+          } else {
+            Notify.create({ type: 'negative', message: msg })
+          }
+        }
+      } catch { /* ignore notify errors */ }
+      return Promise.reject(error)
+    }
+  )
+
   app.config.globalProperties.$api = api
   // ^ ^ ^ this will allow you to use this.$api (for Vue Options API form)
   //       so you can easily perform requests against your app's API

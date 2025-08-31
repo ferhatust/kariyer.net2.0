@@ -52,49 +52,32 @@
               <div class="col-auto"><q-btn flat dense color="primary" label="Tümünü Gör" @click="router.push('/jobs')"/></div>
             </div>
             <div class="column">
-              <div v-for="item in featured" :key="item.id" class="job-row q-pa-md q-mb-sm bg-white">
-                <div class="row items-center no-wrap">
-                  <div class="col-auto">
-                    <q-avatar size="48px" rounded class="job-logo">
-                      <img :src="item.logo_url || '/icons/favicon-32x32.png'" alt="logo" />
-                    </q-avatar>
-                  </div>
-                  <div class="col">
-                    <div class="text-subtitle1 text-weight-medium">{{ item.baslik }}</div>
-                    <div class="text-caption text-grey-7">{{ item.sirket_adi }} • {{ item.konum || 'Belirtilmedi' }}</div>
-                    <div class="q-mt-xs text-body2 text-grey-8">{{ (item.aciklama || '').slice(0, 120) }}<span v-if="(item.aciklama||'').length>120">...</span></div>
-                    <div class="q-mt-sm row items-center">
-                      <q-chip v-if="item.uzaktan_mi" size="sm" color="blue-1" text-color="primary" icon="home_work">Uzaktan</q-chip>
-                      <q-chip v-if="item.deneyim_duzeyi" size="sm" color="grey-2" text-color="grey-9" icon="trending_up">{{ item.deneyim_duzeyi }}</q-chip>
-                      <q-chip v-if="item.maas" size="sm" color="green-1" text-color="green-8" icon="payments">{{ item.maas }} {{ item.para_birimi || '' }}</q-chip>
-                      <q-space />
-                      <q-btn flat color="primary" dense label="Detay" @click="goDetail(item.id)" />
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <JobCard
+                v-for="item in featured"
+                :key="item.id"
+                :item="item"
+                :max-chars="120"
+                @detail="goDetail"
+                @apply="goDetail"
+              />
             </div>
           </div>
 
           <!-- Right column: widgets -->
           <div class="col-12 col-lg-4">
-            <q-card flat bordered class="bg-white q-mb-md">
-              <q-card-section class="text-subtitle2">Popüler Aramalar</q-card-section>
-              <q-separator />
-              <q-list separator>
-                <q-item v-for="t in popular" :key="t" clickable @click="quickCategory(t)">
-                  <q-item-section avatar><q-icon name="search"/></q-item-section>
-                  <q-item-section>{{ t }}</q-item-section>
-                </q-item>
-              </q-list>
-            </q-card>
-
-            <q-card flat bordered class="bg-white">
-              <q-card-section class="text-subtitle2">Kariyer İpuçları</q-card-section>
+            <SidebarWidgets :popular="popular" :tips="tips" @select="quickCategory" @more-tips="moreTips" @upload-cv="uploadCv" @open-job="goDetail" />
+            <q-card flat bordered class="bg-white q-mt-md recent-card" v-if="recentJobs.length">
+              <q-card-section class="text-subtitle2">Son Görüntülenenler</q-card-section>
               <q-separator />
               <q-list>
-                <q-item v-for="(tip, i) in tips" :key="i">
-                  <q-item-section>{{ tip }}</q-item-section>
+                <q-item v-for="r in recentJobs" :key="r.id" clickable @click="goDetail(r.id)">
+                  <q-item-section avatar>
+                    <q-avatar rounded size="28px"><img :src="r.logo_url || '/icons/favicon-32x32.png'" alt="logo" loading="lazy"/></q-avatar>
+                  </q-item-section>
+                  <q-item-section>
+                    <q-item-label class="ellipsis">{{ r.baslik }}</q-item-label>
+                    <q-item-label caption class="text-grey-7 ellipsis">{{ r.sirket_adi }}</q-item-label>
+                  </q-item-section>
                 </q-item>
               </q-list>
             </q-card>
@@ -102,6 +85,7 @@
         </div>
       </div>
     </div>
+    <UploadCvDialog v-model="uploadOpen" @uploaded="onCvUploaded" />
   </q-page>
 </template>
 
@@ -110,6 +94,9 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from 'boot/axios'
 import { Notify } from 'quasar'
+import SidebarWidgets from 'components/SidebarWidgets.vue'
+import UploadCvDialog from 'components/UploadCvDialog.vue'
+import JobCard from 'components/JobCard.vue'
 
 const router = useRouter()
 const q = ref('')
@@ -122,18 +109,45 @@ const tips = [
 ]
 
 const featured = ref([])
+const uploadOpen = ref(false)
+const recentJobs = ref([])
 
 function goDetail (id) {
   try { router.push({ path: `/jobs/${id}` }) } catch (e) { void e }
 }
 
+function saveRecentSearch (term) {
+  try {
+    if (!term) return
+    const raw = localStorage.getItem('recent_searches')
+    const arr = raw ? JSON.parse(raw) : []
+    const list = Array.isArray(arr) ? arr : []
+    const next = [term, ...list.filter(t => t !== term)].slice(0, 10)
+    localStorage.setItem('recent_searches', JSON.stringify(next))
+  } catch { /* ignore */ }
+}
+
 function goJobs () {
   const params = q.value ? { query: { q: q.value } } : {}
+  if (q.value) saveRecentSearch(q.value)
   router.push({ path: '/jobs', ...params })
 }
 
 function quickCategory (c) {
+  saveRecentSearch(c)
   router.push({ path: '/jobs', query: { q: c } })
+}
+
+function moreTips () {
+  Notify.create({ type: 'info', message: 'Yakında: daha fazla kariyer içeriği!' })
+}
+
+function uploadCv () {
+  uploadOpen.value = true
+}
+
+function onCvUploaded () {
+  try { localStorage.setItem('cv_uploaded_at', String(Date.now())) } catch { /* ignore */ }
 }
 
 function handleCreateJob () {
@@ -149,6 +163,12 @@ onMounted(async () => {
     console.error(e)
     Notify.create({ type: 'negative', message: 'İlanlar yüklenemedi' })
   }
+  // load recent jobs from localStorage
+  try {
+    const raw = localStorage.getItem('recent_jobs')
+    const arr = raw ? JSON.parse(raw) : []
+    recentJobs.value = Array.isArray(arr) ? arr : []
+  } catch { /* ignore */ }
 })
 </script>
 
@@ -162,4 +182,29 @@ onMounted(async () => {
 .job-row:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
 .job-logo { background: #f2f5ff; }
 .container { max-width: 1200px; margin: 0 auto; }
+
+/* Dark mode for recent card */
+body.body--dark :deep(.recent-card) { border-color: #2a2b31; }
+
+/* Dark mode overrides */
+body.body--dark .homepage-hero,
+:deep(.q-dark) .homepage-hero {
+  background: linear-gradient(135deg, rgba(93,62,188,0.18), rgba(0,0,0,0.20));
+}
+body.body--dark .promo-card,
+:deep(.q-dark) .promo-card {
+  border-color: #2a2b31;
+}
+body.body--dark .promo-avatar,
+:deep(.q-dark) .promo-avatar { background: #2a2b31; }
+
+/* Search input in hero (standout forces bg/text) */
+body.body--dark .homepage-hero :deep(.q-field--standout .q-field__control) {
+  background: #2a2b31 !important;
+  color: #e6e7eb !important;
+}
+body.body--dark .homepage-hero :deep(.q-field--standout .q-field__native),
+body.body--dark .homepage-hero :deep(.q-field--standout .q-field__label) {
+  color: #d6d7dc !important;
+}
 </style>

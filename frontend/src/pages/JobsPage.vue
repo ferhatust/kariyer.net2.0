@@ -60,35 +60,13 @@
               </div>
             </div>
             <div v-else>
-              <div v-for="item in jobs" :key="item.id" class="job-row q-pa-md q-mb-sm bg-white">
-                <div class="row items-center no-wrap">
-                  <div class="col-auto">
-                    <q-avatar size="48px" rounded class="job-logo">
-                      <img :src="item.logo_url || '/icons/favicon-32x32.png'" alt="logo" />
-                    </q-avatar>
-                  </div>
-                  <div class="col">
-                    <div class="row items-center no-wrap">
-                      <div class="col">
-                        <div class="text-subtitle1 text-weight-medium">{{ item.baslik }}</div>
-                        <div class="text-caption text-grey-7">{{ item.sirket_adi }} • {{ item.konum || 'Belirtilmedi' }}</div>
-                      </div>
-                      <div class="col-auto text-right">
-                        <q-btn :icon="isBookmarked(item.id) ? 'bookmark' : 'bookmark_border'" flat dense class="q-mr-xs" @click="toggleBookmark(item.id)" />
-                        <q-btn color="primary" dense unelevated label="Başvur" @click="openApplyFromList(item)" />
-                      </div>
-                    </div>
-                    <div class="q-mt-xs text-body2 text-grey-8">{{ (item.aciklama || '').slice(0, 140) }}<span v-if="(item.aciklama||'').length>140">...</span></div>
-                    <div class="q-mt-sm row items-center">
-                      <q-chip v-if="item.uzaktan_mi" size="sm" color="blue-1" text-color="primary" icon="home_work">Uzaktan</q-chip>
-                      <q-chip v-if="item.deneyim_duzeyi" size="sm" color="grey-2" text-color="grey-9" icon="trending_up">{{ item.deneyim_duzeyi }}</q-chip>
-                      <q-chip v-if="item.maas" size="sm" color="green-1" text-color="green-8" icon="payments">{{ item.maas }} {{ item.para_birimi || '' }}</q-chip>
-                      <q-space />
-                      <q-btn flat color="primary" dense label="Detay" @click="goDetail(item.id)" />
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <JobCard
+                v-for="item in jobs"
+                :key="item.id"
+                :item="item"
+                @detail="goDetail"
+                @apply="openApplyFromList"
+              />
               <div v-if="!jobs.length" class="q-mt-md">
                 <q-banner class="bg-grey-3">Kayıt bulunamadı</q-banner>
               </div>
@@ -107,26 +85,7 @@
       </div>
       <!-- Right Sidebar Widgets -->
       <div class="col-12 col-lg-4">
-        <q-card flat bordered class="bg-white q-mb-md">
-          <q-card-section class="text-subtitle2">Popüler Aramalar</q-card-section>
-          <q-separator />
-          <q-list separator>
-            <q-item v-for="t in popular" :key="t" clickable @click="quickCategory(t)">
-              <q-item-section avatar><q-icon name="search"/></q-item-section>
-              <q-item-section>{{ t }}</q-item-section>
-            </q-item>
-          </q-list>
-        </q-card>
-
-        <q-card flat bordered class="bg-white">
-          <q-card-section class="text-subtitle2">Kariyer İpuçları</q-card-section>
-          <q-separator />
-          <q-list>
-            <q-item v-for="(tip, i) in tips" :key="i">
-              <q-item-section>{{ tip }}</q-item-section>
-            </q-item>
-          </q-list>
-        </q-card>
+        <SidebarWidgets :popular="popular" :tips="tips" @select="quickCategory" @more-tips="moreTips" @upload-cv="uploadCv" @open-job="openJob" />
       </div>
     </div>
     </div>
@@ -192,6 +151,9 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Upload CV Dialog -->
+    <UploadCvDialog v-model="uploadOpen" @uploaded="onCvUploaded" />
   </q-page>
 </template>
 
@@ -200,6 +162,9 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from 'boot/axios'
 import { Notify, debounce } from 'quasar'
+import JobCard from 'components/JobCard.vue'
+import UploadCvDialog from 'components/UploadCvDialog.vue'
+import SidebarWidgets from 'components/SidebarWidgets.vue'
 
 const jobs = ref([])
 const page = ref(1)
@@ -209,6 +174,7 @@ const router = useRouter()
 // no router usage yet; detail navigation can be added later
 
 const createOpen = ref(false)
+const uploadOpen = ref(false)
 const submitting = ref(false)
 // apply dialog state
 const applyOpen = ref(false)
@@ -281,9 +247,21 @@ async function fetchJobs (append = false) {
   }
 }
 
+function saveRecentSearch (term) {
+  try {
+    if (!term) return
+    const raw = localStorage.getItem('recent_searches')
+    const arr = raw ? JSON.parse(raw) : []
+    const list = Array.isArray(arr) ? arr : []
+    const next = [term, ...list.filter(t => t !== term)].slice(0, 10)
+    localStorage.setItem('recent_searches', JSON.stringify(next))
+  } catch { /* ignore */ }
+}
+
 const debouncedFetch = debounce(() => {
   page.value = 1
   fetchJobs(false)
+  saveRecentSearch(filters.value.q)
 }, 300)
 
 function openCreate () {
@@ -378,24 +356,6 @@ function goDetail (id) {
   } catch (e) { void e }
 }
 
-// Bookmark helpers
-function isBookmarked (jobId) {
-  try {
-    const raw = localStorage.getItem('bookmarks')
-    const set = raw ? new Set(JSON.parse(raw)) : new Set()
-    return set.has(jobId)
-  } catch { return false }
-}
-function toggleBookmark (jobId) {
-  try {
-    const raw = localStorage.getItem('bookmarks')
-    const set = raw ? new Set(JSON.parse(raw)) : new Set()
-    if (set.has(jobId)) set.delete(jobId); else set.add(jobId)
-    localStorage.setItem('bookmarks', JSON.stringify(Array.from(set)))
-    Notify.create({ type: 'positive', message: set.has(jobId) ? 'Kaydedildi' : 'Kayıt kaldırıldı' })
-  } catch (e) { console.error(e) }
-}
-
 // Apply flow
 function openApplyFromList (item) {
   try {
@@ -441,6 +401,24 @@ watch(() => ({ ...filters.value }), () => {
 function quickCategory (t) {
   filters.value.q = t
   debouncedFetch()
+}
+
+function moreTips () {
+  Notify.create({ type: 'info', message: 'Yakında: daha fazla kariyer içeriği!' })
+}
+
+function uploadCv () {
+  uploadOpen.value = true
+}
+
+function onCvUploaded () {
+  try {
+    localStorage.setItem('cv_uploaded_at', String(Date.now()))
+  } catch { /* ignore */ }
+}
+
+function openJob (id) {
+  try { router.push({ path: `/jobs/${id}` }) } catch { /* ignore */ }
 }
 
 // no table; using list + q-pagination

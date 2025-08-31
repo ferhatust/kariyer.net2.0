@@ -10,7 +10,7 @@
         <q-card-section class="row items-center">
           <div class="col-auto">
             <q-avatar size="56px" rounded class="job-logo q-mr-md">
-              <img :src="job?.logo_url || '/icons/favicon-32x32.png'" alt="logo" />
+              <img :src="job?.logo_url || '/icons/favicon-32x32.png'" alt="logo" loading="lazy" />
             </q-avatar>
           </div>
           <div class="col">
@@ -38,7 +38,7 @@
         <q-separator />
         <q-list>
           <q-item v-for="rel in related" :key="rel.id" clickable @click="goDetail(rel.id)">
-            <q-item-section avatar><q-avatar rounded size="32px"><img :src="rel.logo_url || '/icons/favicon-32x32.png'"/></q-avatar></q-item-section>
+            <q-item-section avatar><q-avatar rounded size="32px"><img :src="rel.logo_url || '/icons/favicon-32x32.png'" loading="lazy"/></q-avatar></q-item-section>
             <q-item-section>{{ rel.baslik }}</q-item-section>
             <q-item-section side class="text-caption text-grey-7">{{ rel.sirket_adi }}</q-item-section>
           </q-item>
@@ -136,6 +136,15 @@ onMounted(async () => {
   try {
     const { data } = await api.get(`/is_ilanlari/${id}`)
     job.value = data
+    // track recently viewed
+    try {
+      const raw = localStorage.getItem('recent_jobs')
+      const arr = raw ? JSON.parse(raw) : []
+      const list = Array.isArray(arr) ? arr : []
+      const entry = { id: data?.id, baslik: data?.baslik, logo_url: data?.logo_url, sirket_adi: data?.sirket_adi }
+      const next = [entry, ...list.filter(j => j && j.id !== entry.id)].slice(0, 8)
+      localStorage.setItem('recent_jobs', JSON.stringify(next))
+    } catch { /* ignore */ }
   } catch (e) { console.error(e) }
   try {
     const { data } = await api.get('/is_ilanlari', { params: { page: 1, per_page: 5 } })
